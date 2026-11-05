@@ -1,0 +1,30 @@
+/* Jenkins / Blue Ocean style stage view. Reuses the app's existing colours. */
+.deployment-stages{margin:0 0 20px}
+.stage-strip{display:flex;align-items:stretch;gap:0}
+.stage-wrap{display:flex;align-items:stretch;flex:1;min-width:0}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:transparent;border:1px solid transparent;border-radius:6px;padding:10px 4px;color:#9bafbd;min-width:0}
+.stage:hover{background:#15222b;color:#fff}
+.stage.selected{border-color:#34424a;background:#141d25;color:#fff}
+.stage-dot{width:31px;height:31px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#1b252c;color:#647c8a;border:1px solid #34424a;font-size:11px;flex-shrink:0}
+.stage.passed .stage-dot{background:#173e2c;border-color:#397457;color:#98f3bf}
+.stage.failed .stage-dot{color:var(--red);border-color:#824650;background:#3c2530}
+.stage.running .stage-dot{color:var(--amber);border-color:#6b5a33;background:#332d1e}
+.stage b{font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.stage small{font-size:9px;text-transform:capitalize;color:var(--muted)}
+.stage-connector{width:14px;flex-shrink:0;position:relative}
+.stage-connector:before{content:'';position:absolute;left:0;right:0;top:26px;height:1px;background:#2d4038}
+.approval-gate{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0;padding:11px 14px;border:1px dashed #2d443e;border-radius:6px;background:#0d1b17;font-size:11px;color:#b3d1bf}
+.approval-gate b{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:#8daba0}
+.approval-gate small{color:var(--muted);font-size:10px}
+.stage-detail{margin-top:12px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:11px}
+.stage-detail p{width:100%;margin:0;color:var(--muted);line-height:1.6;font-size:11px}
+.stage-status{text-transform:capitalize;color:#9baeba}
+.stage-status.passed{color:#85eeb3}
+.stage-status.failed{color:var(--red)}
+.stage-status.running{color:var(--amber)}
+@media(max-width:760px){
+  .stage-strip{flex-wrap:wrap;gap:8px}
+  .stage-wrap{flex:1 1 30%}
+  .stage-connector{display:none}
+  .approval-gate{flex-direction:column;align-items:flex-start;gap:6px}
+}
