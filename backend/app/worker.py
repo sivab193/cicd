@@ -21,7 +21,7 @@ def provider_job(id):
         if not d.get('external_id'):return
         result=await PROVIDERS[p['provider']].status(p,d['external_id'])
         state=result.get('readyState') or result.get('status')
-        if state=='READY' or result.get('conclusion')=='success': d['status']='verifying';d['steps']['deploy']='passed'
+        if state=='READY' or result.get('conclusion')=='success': d['status']='verifying';d.setdefault('steps',{})['deploy']='passed'
         elif state in ('ERROR','CANCELED') or result.get('conclusion') in ('failure','timed_out','cancelled'): d['status']='failed'
         else: d['status']='building'
         put('deployment',d)

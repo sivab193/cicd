@@ -124,9 +124,18 @@ async def callback(req:Request,code:str,state:str):
 @app.post('/api/auth/logout')
 async def logout(req:Request,u=Depends(writer)):
     req.session.clear(); return {'ok':True}
+def _redacted_projects():
+    out=[]
+    for proj in records('project'):
+        proj=dict(proj); cfg=dict(proj.get('provider_config') or {})
+        proj['provider_config']={k:v for k,v in cfg.items() if not any(t in k.lower() for t in ('token','secret','password','private_key','api_key','access_key'))}
+        out.append(proj)
+    return out
 @app.get('/api/dashboard')
 async def dashboard(u=Depends(user)):
-    return {kind:records(kind) for kind in ['project','repository','deployment','finding','health_check','host','service','activity','incident'] } | {'demo':DEMO,'user':u}
+    data={kind:records(kind) for kind in ['repository','deployment','finding','health_check','host','service','activity','incident']}
+    data['project']=_redacted_projects()
+    return data | {'demo':DEMO,'user':u}
 @app.get('/api/actions/runs')
 async def recent_action_runs(limit:int=30,u=Depends(user)):
     limit=max(1,min(limit,100))
@@ -138,7 +147,7 @@ async def recent_action_runs(limit:int=30,u=Depends(user)):
             p=projects.get(d['project'])
             if not p: continue
             for repo in p.get('repositories',[]):
-                runs.append({'id':d['id'],'name':f'{p["name"]} · CI','repository':{'full_name':repo},'head_branch':d.get('branch','main'),'head_sha':d.get('commit','')*8,'actor':{'login':d.get('actor','Sivaganesh')},'status':'completed','conclusion':'success' if d['status']=='healthy' else 'failure' if d['status']=='failed' else d['status'],'created_at':d.get('started_at'),'html_url':None,'sample':True})
+                runs.append({'id':d['id'],'name':f'{p["name"]} · CI','repository':{'full_name':repo},'head_branch':d.get('branch','main'),'head_sha':d.get('commit') or '','actor':{'login':d.get('actor','Sivaganesh')},'status':'completed','conclusion':'success' if d['status']=='healthy' else 'failure' if d['status']=='failed' else d['status'],'created_at':d.get('started_at'),'html_url':None,'sample':True})
         return {'workflow_runs':sorted(runs,key=lambda r:r.get('created_at') or '',reverse=True)[:limit],'repositories_scanned':len(managed),'repositories_total':len(managed),'truncated':False,'errors':[]}
     semaphore=asyncio.Semaphore(8);token_cache={};cache_lock=asyncio.Lock()
     async def runs_for(repository):
@@ -173,6 +182,7 @@ async def update_project(id:str,body:dict,u=Depends(admin)):
     changes={k:v for k,v in body.items() if k in allowed}
     if 'provider' in changes and changes['provider'] not in PROVIDERS: raise HTTPException(400,'Unknown provider')
     if 'provider_config' in changes and not isinstance(changes['provider_config'],dict): raise HTTPException(400,'Provider configuration must be an object')
+    if 'provider_config' in changes and any(t in k.lower() for k in changes['provider_config'] for t in ('token','secret','password','private_key','api_key','access_key')): raise HTTPException(400,'Provider configuration must not contain credentials; use an integration account instead')
     selected_provider=changes.get('provider',p['provider'])
     selected_config=changes.get('provider_config',p.get('provider_config',{}))
     if selected_config.get('integration_account_id'):
@@ -221,7 +231,7 @@ async def deployment(id:str,body:DeployInput,u=Depends(writer)):
     target=get(body.target,'deployment') if body.target else None
     if body.action=='rollback' and not target: raise HTTPException(400,'Choose a rollback target')
     if target and (target['project']!=id or target['environment']!=body.environment or target['status']!='healthy'): raise HTTPException(400,'Rollback target must be a healthy deployment in the same project/environment')
-    d={'id':uuid4().hex,'project':id,'project_name':p['name'],'environment':body.environment,'provider':p['provider'],'branch':p['branch'],'commit':target['commit'] if target else p['branch'],'source':body.action,'actor':u['login'],'status':'queued','started_at':now(),'duration':0,'previous_deployment':history[0]['id'] if history else None,'rollback_target':body.target,'target_external_id':target.get('external_id') if target else (history[0].get('external_id') if history else None),'steps':{'build':'pending','security':'passed','deploy':'pending','verification':'pending'},'logs':[]}
+    d={'id':uuid4().hex,'project':id,'project_name':p['name'],'environment':body.environment,'provider':p['provider'],'branch':p['branch'],'commit':target['commit'] if target else '','source':body.action,'actor':u['login'],'status':'queued','started_at':now(),'duration':0,'previous_deployment':history[0]['id'] if history else None,'rollback_target':body.target,'target_external_id':target.get('external_id') if target else (history[0].get('external_id') if history else None),'steps':{'build':'pending','security':'passed','deploy':'pending','verification':'pending'},'logs':[]}
     if DEMO: d['logs']=['Sample mode: action recorded. No external deployment was triggered.']; d['status']='queued'
     else:
         try: d.update(await provider.execute(body.action,p,d))
@@ -393,7 +403,7 @@ async def verify(id:str,u=Depends(writer)):
     if d['status'] not in ('verifying','failed'): raise HTTPException(409,'Provider must complete deployment before verification')
     if not checks: raise HTTPException(409,'At least one required health check is needed')
     results=[await run_check(c['id'],u) for c in checks]
-    d['status']='healthy' if all(r['status']=='healthy' for r in results) else 'failed'; d['steps']['verification']='passed' if d['status']=='healthy' else 'failed'; d['ended_at']=now(); put('deployment',d); audit(f'{d["project_name"]}: verification {d["status"]}','health',u['login']); return d
+    d.setdefault('steps',{})['verification']='passed' if all(r['status']=='healthy' for r in results) else 'failed'; d['status']='healthy' if all(r['status']=='healthy' for r in results) else 'failed'; d['ended_at']=now(); put('deployment',d); audit(f'{d["project_name"]}: verification {d["status"]}','health',u['login']); return d
 @app.patch('/api/findings/{id}')
 async def finding_state(id:str,body:dict,u=Depends(writer)):
     if body.get('status') not in ('open','acknowledged','ignored','fixed','false_positive'): raise HTTPException(400,'Invalid finding status')
@@ -564,8 +574,10 @@ async def webhook(req:Request):
         run=payload['workflow_run']; repo=payload['repository']['full_name']
         for p in records('project'):
             if repo not in p['repositories']: continue
-            existing=next((d for d in records('deployment') if d['project']==p['id'] and (d.get('external_id')==str(run['id']) or (d['status']=='queued' and d['branch']==run['head_branch']))),None)
-            d=existing or {'id':uuid4().hex,'project':p['id'],'project_name':p['name'],'environment':'production','provider':'GitHub Actions','source':'push','actor':run['actor']['login'],'started_at':run['created_at'],'duration':0,'logs':[],'steps':{}}
+            existing=next((d for d in records('deployment') if d['project']==p['id'] and d.get('external_id')==str(run['id'])),None)
+            d=existing or {'id':uuid4().hex,'project':p['id'],'project_name':p['name'],'environment':'production','provider':'GitHub Actions','source':'push','actor':run['actor']['login'],'started_at':run['created_at'],'duration':0,'logs':[],'steps':{'build':'pending','security':'passed','deploy':'pending','verification':'pending'}}
+            d.setdefault('steps',{})
+            for _k in ('build','security','deploy','verification'): d['steps'].setdefault(_k,'pending')
             d.update(external_id=str(run['id']),commit=run['head_sha'],branch=run['head_branch'],status='verifying' if run.get('conclusion')=='success' else 'failed' if run.get('conclusion') in ('failure','timed_out') else 'cancelled' if run.get('conclusion')=='cancelled' else 'building')
             put('deployment',d)
     audit(f'GitHub {event} received','repository'); return {'ok':True}
@@ -619,7 +631,7 @@ async def task_result(id:str,body:dict,a=Depends(agent_identity)):
     t['message']='Agent operation completed' if body.get('success') else 'Agent operation failed; inspect logs on host'
     put('agent_task',t)
     if t.get('deployment'):
-        d=get(t['deployment'],'deployment');d['status']='verifying' if body.get('success') else 'failed';d['steps']['deploy']='passed' if body.get('success') else 'failed';d['logs']+= [t['message']];put('deployment',d)
+        d=get(t['deployment'],'deployment');d['status']='verifying' if body.get('success') else 'failed';d.setdefault('steps',{})['deploy']='passed' if body.get('success') else 'failed';d['logs']+= [t['message']];put('deployment',d)
     audit(f'{a["name"]}: {t["action"]} {t["status"]}','infrastructure',a['name']);return {'ok':True}
 @app.get('/api/deployments/{id}/logs')
 async def deployment_logs(id:str,u=Depends(user)):
