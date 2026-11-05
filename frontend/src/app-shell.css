@@ -82,11 +82,14 @@ textarea:focus-visible {
   gap: 0;
   overflow: auto;
   padding: 0 0 12px;
+  flex: 1;
+  min-height: 0;
 }
 
 .nav-item {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .nav-section-label {
@@ -99,13 +102,35 @@ textarea:focus-visible {
 }
 
 .sidebar nav .nav-item > a {
+  display: flex;
+  align-items: center;
+  position: relative;
   min-height: 36px;
   gap: 11px;
   padding: 8px 12px;
   border-radius: 7px;
   color: #a7b3bd;
   font-size: 12px;
+  white-space: nowrap;
   transition: background 150ms ease, color 150ms ease;
+}
+
+/* The base stylesheet styles `.sidebar nav > a`; the markup is
+   `nav > .nav-item > a`, so without this the link was an inline
+   element, `gap` was ignored, and the icon overlapped the label. */
+.sidebar nav .nav-item > a > svg {
+  flex-shrink: 0;
+}
+
+.sidebar nav .nav-item > a > span:not(.nav-alert) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar nav .nav-item > a > .nav-alert {
+  flex-shrink: 0;
 }
 
 .sidebar nav .nav-item > a:hover {
@@ -119,10 +144,13 @@ textarea:focus-visible {
 }
 
 .sidebar nav .nav-item > a.active:before {
+  content: '';
+  position: absolute;
   left: -14px;
   top: 8px;
   bottom: 8px;
   width: 2px;
+  border-radius: 2px;
   background: var(--mint);
 }
 
@@ -258,4 +286,55 @@ textarea:focus-visible {
   .button {
     transition: none;
   }
+}
+
+/* Layout hardening, same class of bug as the sidebar nav:
+   flex children must be allowed to shrink, otherwise long text
+   pushes icons, badges, and panels out of their containers. */
+.sidebar {
+  overflow-x: hidden;
+}
+
+.sidebar-bottom {
+  flex-shrink: 0;
+}
+
+.nav-section-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-switch > div > b,
+.profile > div,
+.connection > div {
+  min-width: 0;
+}
+
+.workspace-switch > div > b,
+.profile > div > b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-title > div,
+.project-heading > div,
+.panel-head > div,
+.simple-row > div,
+.deployment-summary > div {
+  min-width: 0;
+}
+
+.page-title h1,
+.project-heading h1,
+.panel-head h3 {
+  overflow-wrap: anywhere;
+}
+
+.topology-center {
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
